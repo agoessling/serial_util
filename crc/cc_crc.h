@@ -12,7 +12,7 @@ namespace crc {
 namespace impl {
 
 template <int N>
-struct always_false : std::true_type {};
+struct always_false : std::false_type {};
 
 template <int N>
 struct CrcConfig {

@@ -55,14 +55,15 @@ def crc_repo(**kwargs):
     for crc in crcs:
         crc_table(*crc, **kwargs)
 
-    targets = [":" + x[0] for x in crcs]
-    hdrs = [x[0] + ".h" for x in crcs]
+    all_targets = [":" + x[0] for x in crcs]
+    all_srcs = [x[0] + ".c" for x in crcs]
+    all_hdrs = [x[0] + ".h" for x in crcs]
 
     lines = [
         "#pragma once",
         "",
     ]
-    lines += ["#include \"crc/{}\"".format(h) for h in hdrs]
+    lines += ["#include \"crc/{}\"".format(h) for h in all_hdrs]
 
     write_file(
         name = "all_crcs_gen",
@@ -74,15 +75,14 @@ def crc_repo(**kwargs):
     native.cc_library(
         name = "all_crcs",
         hdrs = ["all_crcs.h"],
-        deps = targets + ["@//crc:c_crc"],
+        deps = all_targets + ["@//crc:c_crc"],
         **kwargs
     )
 
     native.cc_binary(
         name = "all_crcs.so",
-        srcs = ["all_crcs.h"],
+        srcs = all_srcs,
         linkshared = True,
-        deps = targets + ["@//crc:c_crc"],
-        linkopts = ["-Wl,-no-gc-sections"],
+        deps = ["@//crc:c_crc"],
         **kwargs
     )

@@ -1,7 +1,7 @@
 import ctypes
 
 _lib = ctypes.cdll.LoadLibrary('crc/c_crc.so')
-print(ctypes.cdll.LoadLibrary('crc/all_crcs.so').__dict__)
+_all_crcs = ctypes.cdll.LoadLibrary('crc/all_crcs.so')
 
 
 class _Crc8Info(ctypes.Structure):
@@ -91,18 +91,45 @@ _lib.Crc32Block.argtypes = [
 ]
 _lib.Crc32Block.restype = ctypes.c_uint32
 
-_CrcInfo = {
-    8: _Crc8Info,
-    16: _Crc16Info,
-    32: _Crc32Info,
+_CrcMapping = {
+    8: (_Crc8Info, _lib.Crc8Update, _lib.Crc8Seq, _lib.Crc8Block),
+    16: (_Crc16Info, _lib.Crc16Update, _lib.Crc16Seq, _lib.Crc16Block),
+    32: (_Crc32Info, _lib.Crc32Update, _lib.Crc32Seq, _lib.Crc32Block),
 }
 
 
 class Crc:
 
   def __init__(self, bits: int, name: str):
-    if bits not in _CrcInfo:
+    self.bits = bits
+
+    if bits not in _CrcMapping:
       raise ValueError(f'bits ({bits}) not supported.')
 
-    self.bits = bits
-    self.info = getattr(_lib, name)
+    if str(bits) not in name:
+      raise ValueError(f'bits ({bits}) does not match Crc{bits}Info struct name: {name}')
+
+    self._CrcInfo, self._CrcUpdate, self._CrcSeq, self._CrcBlock = _CrcMapping[bits]
+
+    try:
+      self.info = self._CrcInfo.in_dll(_all_crcs, name)
+    except ValueError:
+      raise AttributeError(f'{name} does not name a valid Crc{bits}Info struct.')
+
+    self.reset()
+
+  def reset(self):
+    self.crc = self.info.initial_crc
+
+  def block(self, data: bytes) -> int:
+    input = (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
+    return self._CrcBlock(self.info, input, len(input))
+
+  def update(self, data: bytes | int) -> int:
+    if isinstance(data, int):
+      self.crc = self._CrcUpdate(self.info, self.crc, data)
+      return self.info.final_xor ^ self.crc
+
+    input = (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
+    self.crc = self._CrcSeq(self.info, input, len(input), self.crc)
+    return self.info.final_xor ^ self.crc
