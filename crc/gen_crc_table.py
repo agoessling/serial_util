@@ -74,44 +74,69 @@ def table_str(table: list[int], bits: int) -> str:
   return '\n'.join(lines)
 
 
-def get_source(table_name: str, table: list[int], bits: int) -> str:
+def _crc_table_name(crc_name: str) -> str:
+  return f'{crc_name}Table'
+
+
+def _crc_info_name(crc_name: str) -> str:
+  return f'{crc_name}Info'
+
+
+def get_source(crc_name: str, table: list[int], bits: int, initial_crc: int, final_xor: int,
+               lsb_first: bool) -> str:
   return f'''\
+#include <stdbool.h>
 #include <stdint.h>
 
-const {_data_type(bits)} {table_name}[{len(table)}] = {{
+#include "crc/c_crc.h"
+
+const {_data_type(bits)} {_crc_table_name(crc_name)}[{len(table)}] = {{
 {textwrap.indent(table_str(table, bits), '    ')}
+}};
+
+const Crc{bits}Info {_crc_info_name(crc_name)} = {{
+    .table = {_crc_table_name(crc_name)},
+    .initial_crc = {_hex_fmt(initial_crc, bits)},
+    .final_xor = {_hex_fmt(final_xor, bits)},
+    .lsb_first = {'true' if lsb_first else 'false'},
 }};
 '''
 
 
-def get_header(table_name: str, table: list[int], bits: int) -> str:
+def get_header(crc_name: str, table: list[int], bits: int) -> str:
   return f'''\
 #pragma once
 
 #include <stdint.h>
 
-extern const {_data_type(bits)} {table_name}[{len(table)}];
+#include "crc/c_crc.h"
+
+extern const {_data_type(bits)} {_crc_table_name(crc_name)}[{len(table)}];
+extern const Crc{bits}Info {_crc_info_name(crc_name)};
 '''
+
+
+def hex(val: str) -> int:
+  if val.lower().startswith('0x'):
+    return int(val, 16)
+  return int(val)
 
 
 def main():
   parser = argparse.ArgumentParser(description='Generate 256 element CRC lookup table.')
   parser.add_argument('-b', '--bits', type=int, required=True, help='CRC bit length.')
-  parser.add_argument('-p', '--polynomial', required=True, help='Generator polynomial.')
+  parser.add_argument('-p', '--polynomial', type=hex, required=True, help='Generator polynomial.')
+  parser.add_argument('-i', '--initial-crc', type=hex, required=True, help='Initial CRC value.')
+  parser.add_argument('-x', '--final-xor', type=hex, required=True, help='Final XOR value.')
   parser.add_argument('--lsb_first', action='store_true', help='LSB first or reflected table.')
   parser.add_argument('--header', help='Header file name to write.')
   parser.add_argument('--source', help='Source file name to write.')
-  parser.add_argument('--name', help='Name for C array.')
+  parser.add_argument('--name', help='Name for C array and info struct.')
   parser.add_argument('--print', action='store_true', help='Print table values.')
 
   args = parser.parse_args()
 
-  if args.polynomial.lower().startswith('0x'):
-    poly = int(args.polynomial, 16)
-  else:
-    poly = int(args.polynomial)
-
-  table = crc_table(args.bits, poly, args.lsb_first)
+  table = crc_table(args.bits, args.polynomial, args.lsb_first)
 
   write_output = any(x is not None for x in [args.header, args.source, args.name])
   if write_output:
@@ -123,12 +148,13 @@ def main():
       f.write(get_header(args.name, table, args.bits))
 
     with open(args.source, 'w') as f:
-      f.write(get_source(args.name, table, args.bits))
+      f.write(
+          get_source(args.name, table, args.bits, args.initial_crc, args.final_xor, args.lsb_first))
 
   if args.print:
     print('CRC Table')
     print(f'Bits: {args.bits}')
-    print(f'Polynomial: {_hex_fmt(poly, args.bits)}')
+    print(f'Polynomial: {_hex_fmt(args.polynomial, args.bits)}')
     print(f'LSB First (reflected): {args.lsb_first}')
     print('Values:')
     print(table_str(table, args.bits))

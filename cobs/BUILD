@@ -12,7 +12,7 @@ cc_binary(
         "c_cobs.h",
     ],
     linkshared = True,
-    visibility = ["//visibility:public"],
+    visibility = ["//visibility:private"],
 )
 
 cc_test(
